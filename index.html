@@ -4,7 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>익명 메시지</title>
-<style>
+const firebaseConfig = {
+  apiKey: "AIzaSyALmi9bFPlxlv8h8YT3RDviVswF8qJLhMo",
+  authDomain: "test-b933c.firebaseapp.com",
+  databaseURL: "https://test-b933c-default-rtdb.firebaseio.com",
+  projectId: "test-b933c",
+  storageBucket: "test-b933c.firebasestorage.app",
+  messagingSenderId: "982341907625",
+  appId: "1:982341907625:web:4c90213e6ebb9d7ac465b8"
+};
+ <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
     --bg: #ffffff;
@@ -21,16 +30,6 @@
     --input-h: 44px;
   }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-
-const firebaseConfig = {
-  apiKey: "AIzaSyALmi9bFPlxlv8h8YT3RDviVswF8qJLhMo",
-  authDomain: "test-b933c.firebaseapp.com",
-  databaseURL: "https://test-b933c-default-rtdb.firebaseio.com",
-  projectId: "test-b933c",
-  storageBucket: "test-b933c.firebasestorage.app",
-  messagingSenderId: "982341907625",
-  appId: "1:982341907625:web:4c90213e6ebb9d7ac465b8"
-};
  
   /* ─── PAGES ─── */
   .page { display: none; min-height: 100vh; }
