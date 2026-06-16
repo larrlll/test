@@ -86,8 +86,7 @@ function randId(len = 6) {
   return Array.from({length: len}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 function genNickname() {
-  const adj = ['빠른','조용한','밝은','따뜻한','차가운','예리한','부드러운','용감한','현명한','신비한','활발한','느긋한'];
-  const noun = ['참새','고양이','여우','늑대','독수리','펭귄','토끼','곰','호랑이','돌고래','사슴','너구리'];
+  const userName = '익명'; // 무조건 '익명'으로 고정
   return adj[Math.floor(Math.random()*adj.length)] + noun[Math.floor(Math.random()*noun.length)];
 }
 function getOrSetNickname(roomId) {
