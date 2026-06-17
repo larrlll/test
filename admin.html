@@ -15,6 +15,7 @@
 <!--  🔥 FIREBASE CONFIG — 여기에 본인 설정 입력    -->
 <!-- ══════════════════════════════════════════════ -->
 <script>
+// ── 1. 파이어베이스 설정 및 초기화 (통합) ──
 const firebaseConfig = {
   apiKey: "AIzaSyALmi9bFPlxlv8h8YT3RDviVswF8qJLhMo",
   authDomain: "test-b933c.firebaseapp.com",
@@ -24,8 +25,201 @@ const firebaseConfig = {
   messagingSenderId: "982341907625",
   appId: "1:982341907625:web:4c90213e6ebb9d7ac465b8"
 };
-firebase.initializeApp(firebaseConfig);
+
+// 중복 초기화 에러를 완벽하게 방지
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
 const db = firebase.database();
+
+// ── 2. 관리자 설정 ──
+const ADMIN_PW = 'admin1234';
+const TIMER_MS = 15 * 60 * 1000;
+
+let roomsCache = {};
+let deleteTarget = null;
+let extendTarget = null;
+let dbListener = null;
+
+// ── 3. 로그인 함수 ──
+function doLogin() {
+  const pw = document.getElementById('pw-input').value;
+  
+  if (pw !== ADMIN_PW) {
+    document.getElementById('login-err').style.display = 'block';
+    return;
+  }
+  
+  document.getElementById('login-err').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('admin-ui').style.display = 'flex';
+  startListen();
+}
+
+function logout() {
+  if (dbListener) { db.ref('rooms').off('value', dbListener); dbListener = null; }
+  document.getElementById('admin-ui').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('pw-input').value = '';
+}
+
+// ── 4. 실시간 연동 및 데이터 처리 로직 ──
+function startListen() {
+  dbListener = db.ref('rooms').on('value', snap => {
+    roomsCache = {};
+    if (snap.exists()) snap.forEach(c => { roomsCache[c.key] = c.val(); });
+    renderAll();
+    updateRefreshTime();
+  });
+}
+
+function renderAll() {
+  const ids   = Object.keys(roomsCache);
+  const now   = Date.now();
+  const active   = ids.filter(id => (roomsCache[id].expiresAt || 0) > now);
+  const expired  = ids.filter(id => (roomsCache[id].expiresAt || 0) <= now);
+  const totalMsg = ids.reduce((s, id) => s + Object.keys(roomsCache[id].messages || {}).length, 0);
+
+  document.getElementById('st-total').textContent   = ids.length;
+  document.getElementById('st-active').textContent  = active.length;
+  document.getElementById('st-expired').textContent = expired.length;
+  document.getElementById('st-msgs').textContent    = totalMsg;
+
+  const wrap = document.getElementById('rooms-wrap');
+  if (ids.length === 0) { wrap.innerHTML = '<div class="empty">생성된 채팅방이 없습니다.</div>'; return; }
+
+  const sorted = ids.sort((a, b) => (roomsCache[b].createdAt || 0) - (roomsCache[a].createdAt || 0));
+  let html = `<table>
+    <thead><tr>
+      <th>코드</th><th>생성</th><th>만료</th><th>메시지</th><th>상태</th><th>관리</th>
+    </tr></thead><tbody>`;
+  sorted.forEach(id => {
+    const r       = roomsCache[id];
+    const msgs    = Object.keys(r.messages || {}).length;
+    const isLive  = (r.expiresAt || 0) > now;
+    const created = r.createdAt ? new Date(r.createdAt).toLocaleString('ko-KR') : '—';
+    const expires = r.expiresAt ? new Date(r.expiresAt).toLocaleString('ko-KR') : '—';
+    const statusBadge = isLive
+      ? `<span class="badge active"><span class="badge-dot"></span>활성</span>`
+      : `<span class="badge expired"><span class="badge-dot"></span>만료</span>`;
+    const extBadge = r.extended ? `<span class="badge ext">연장됨</span>` : '';
+
+    html += `<tr>
+      <td><span class="room-code">${id}</span></td>
+      <td style="font-size:13px;color:var(--text2);white-space:nowrap">${created}</td>
+      <td style="font-size:13px;color:var(--text2);white-space:nowrap">${expires}</td>
+      <td style="font-weight:600">${msgs}</td>
+      <td>${statusBadge}${extBadge}</td>
+      <td>
+        <div class="acts">
+          <button class="a-btn view"    onclick="viewRoom('${id}')">대화 보기</button>
+          <button class="a-btn ext-btn" onclick="askExtend('${id}')">연장 +15분</button>
+          <button class="a-btn del"     onclick="askDelete('${id}')">삭제</button>
+        </div>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function updateRefreshTime() {
+  document.getElementById('last-refresh').textContent = '업데이트: ' + new Date().toLocaleTimeString('ko-KR');
+}
+
+function viewRoom(id) {
+  const r = roomsCache[id];
+  document.getElementById('detail-title').textContent = '대화 내용 — ' + id;
+  const container = document.getElementById('detail-msgs');
+  container.innerHTML = '';
+
+  if (!r || !r.messages) {
+    container.innerHTML = '<div class="panel-empty">메시지가 없습니다.</div>';
+  } else {
+    const msgs = Object.values(r.messages).sort((a, b) => a.ts - b.ts);
+    const uidMap = {};
+    let uidCount = 0;
+    let lastDate = null;
+    msgs.forEach(msg => {
+      if (!(msg.uid in uidMap)) { uidMap[msg.uid] = uidCount === 0 ? 'in' : 'out'; uidCount++; }
+      const dir = uidMap[msg.uid] || 'in';
+      const d = fmtDate(msg.ts);
+      if (d !== lastDate) {
+        const sep = document.createElement('div');
+        sep.className = 'p-sep';
+        sep.textContent = d;
+        container.appendChild(sep);
+        lastDate = d;
+      }
+      const row = document.createElement('div');
+      row.className = 'p-msg ' + dir;
+      const bub = document.createElement('div');
+      bub.className = 'p-bub';
+      bub.textContent = msg.text;
+      const t = document.createElement('div');
+      t.className = 'p-time';
+      t.textContent = fmtTime(msg.ts);
+      row.appendChild(bub);
+      row.appendChild(t);
+      container.appendChild(row);
+    });
+    setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
+  }
+  document.getElementById('detail-overlay').classList.add('open');
+}
+function closeDetail() { document.getElementById('detail-overlay').classList.remove('open'); }
+
+function askDelete(id) {
+  deleteTarget = id;
+  document.getElementById('del-msg').textContent = `채팅방 [${id}]을 삭제합니다. 모든 대화 내용이 Firebase에서 영구 삭제됩니다.`;
+  document.getElementById('del-overlay').classList.add('open');
+}
+async function confirmDelete() {
+  if (!deleteTarget) return;
+  await db.ref('rooms/' + deleteTarget).remove();
+  toast('채팅방 [' + deleteTarget + '] 삭제 완료');
+  deleteTarget = null;
+  closeConfirm('del-overlay');
+}
+
+function askExtend(id) {
+  extendTarget = id;
+  const r = roomsCache[id];
+  const base = Math.max(r.expiresAt || 0, Date.now());
+  const newExp = new Date(base + TIMER_MS).toLocaleString('ko-KR');
+  document.getElementById('ext-msg').textContent = `채팅방 [${id}]의 타이머를 15분 연장합니다.\n새 만료 시각: ${newExp}`;
+  document.getElementById('ext-overlay').classList.add('open');
+}
+async function confirmExtend() {
+  if (!extendTarget) return;
+  const r = roomsCache[extendTarget];
+  const base = Math.max(r.expiresAt || 0, Date.now());
+  await db.ref('rooms/' + extendTarget).update({
+    expiresAt: base + TIMER_MS,
+    extended:  true
+  });
+  toast('채팅방 [' + extendTarget + '] 타이머 15분 연장 완료');
+  extendTarget = null;
+  closeConfirm('ext-overlay');
+}
+
+function closeConfirm(id) { document.getElementById(id).classList.remove('open'); }
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  const h = d.getHours(), m = d.getMinutes();
+  return (h < 12 ? '오전 ' : '오후 ') + (h % 12 || 12) + ':' + String(m).padStart(2, '0');
+}
+function fmtDate(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
 </script>
 <!-- ══════════════════════════════════════════════ -->
 
